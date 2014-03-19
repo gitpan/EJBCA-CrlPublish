@@ -1,4 +1,4 @@
-package EJBCA::CrlPublisher::Run;
+package EJBCA::CrlPublish::Run;
 use warnings;
 use strict;
 #
@@ -26,7 +26,7 @@ use strict;
 ###############################################################################
 # Global Configuration
 
-our $VERSION = '0.2';
+our $VERSION = '0.3';
 
 my @runpath = split /\//, $0;
 my $program = pop @runpath;

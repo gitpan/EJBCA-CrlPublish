@@ -27,6 +27,8 @@ use strict;
 
 use base 'EJBCA::CrlPublish::Method';
 
+our $VERSION = 0.3;
+
 
 sub validate {
 	my $self = shift;

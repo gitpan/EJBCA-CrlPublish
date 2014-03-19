@@ -26,6 +26,8 @@ use strict;
 ###############################################################################
 # Constructor
 
+our $VERSION = 0.3;
+
 sub new {
 	my ( $class, $crlFile ) = @_;
 

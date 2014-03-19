@@ -28,6 +28,8 @@ use strict;
 
 use Carp;
 
+our $VERSION = 0.3;
+
 
 ###############################################################################
 # Instantiator for a single empty Target object.

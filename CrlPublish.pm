@@ -40,6 +40,8 @@ use EJBCA::CrlPublish::CrlInfo;
 use EJBCA::CrlPublish::Method;
 use EJBCA::CrlPublish::Target;
 
+our $VERSION = '0.3';
+
 
 ###############################################################################
 # Configuration Loader

@@ -28,6 +28,8 @@ use strict;
 
 use Carp;
 
+our $VERSION = 0.3;
+
 
 ###############################################################################
 # Call the publisher on a target.. Only this should be called outside here.
