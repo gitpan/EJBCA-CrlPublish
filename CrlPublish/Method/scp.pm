@@ -25,10 +25,31 @@ use strict;
 #
 ###############################################################################
 
+=head1 NAME
+
+EJBCA::CrlPublish::Method::scp
+
+=head1 SYNOPSIS
+
+Implements publishing via scp.
+
+Updates are atomic; that is, CRLs are transferred to a temporary file and
+then renamed into place, so there is no period of time that an intact CRL
+cannot be retrieved from the server.
+
+=cut
+
+
+###############################################################################
+# Library Dependencies
+
 use base 'EJBCA::CrlPublish::Method';
 
-our $VERSION = 0.3;
+our $VERSION = 0.4;
 
+
+###############################################################################
+# Implementation
 
 sub validate {
 	my $self = shift;
@@ -40,7 +61,7 @@ sub validate {
 sub publish {
 	my $self = shift;
 
-	my @args = ( 'scp' );
+	my @args = ();
 
 	my $host = $self->target->remoteHost;
 	my $path = $self->target->remotePath;
@@ -63,17 +84,32 @@ sub publish {
 
 	$self->checkFileType( 'CRL file', $source );
 
-	my $target = '';
-	$target .= $user . '@' if $user;
-	$target .= $host . ':' . $path . '/' . $file;
+	my $t_host  = $user ? $user . '@' : '';
+	   $t_host .= $host;
+	my $t_file  = $path . '/' . $file;
+	my $t_temp  = $t_file . '.new';
+
+	my $target = $t_host . ':' . $t_temp;
 
 	push @args, $source, $target;
 
-	system( @args ) == 0
+	system( 'scp', @args, $source, $target ) == 0
 		or die "Failed to scp: $?";
+
+	system( 'ssh', @args, $t_host, 'mv', $t_temp, $t_file ) == 0
+		or die "Failed to rename: $?";	
 
 	return 1;
 }
+
+
+###############################################################################
+
+=head1 AUTHOR
+
+Kevin Cody-Little <kcody@cpan.org>
+
+=cut
 
 
 ###############################################################################
