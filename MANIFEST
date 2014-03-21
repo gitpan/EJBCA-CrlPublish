@@ -6,11 +6,11 @@ CrlPublish/Config.pm
 CrlPublish/CrlInfo.pm
 CrlPublish/Method.pm
 CrlPublish/Method/scp.pm
-CrlPublish/Run.pm
 CrlPublish/Target.pm
 MANIFEST
 AUTHORS
 README
 COPYING
 LICENSE
-META.yml                                 Module meta-data (added by MakeMaker)
+META.yml                                 Module YAML meta-data (added by MakeMaker)
+META.json                                Module JSON meta-data (added by MakeMaker)
