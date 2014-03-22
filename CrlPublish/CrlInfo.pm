@@ -41,7 +41,10 @@ Calls the openssl binary and parses the output to get its job done.
 ###############################################################################
 # Library Dependencies
 
-our $VERSION = '0.5';
+use EJBCA::CrlPublish::CrlInfo::Parse;
+use EJBCA::CrlPublish::Logging;
+
+our $VERSION = '0.60';
 
 
 ###############################################################################
@@ -61,9 +64,43 @@ sub new {
 
 	bless my $self = {}, $class;
 
+	msgDebug "Analyzing CRL file $crlFile";
+
 	$self->crlFile( $crlFile );
-	return undef unless $self->importIssuerDn;
-	$self->importIssuingUrl;
+
+	unless ( $self->importIssuerDn ) {
+		msgError "Could not parse issuerDn from CRL.";
+		return undef;
+	}
+
+	unless ( $self->importIssuingUrl ) {
+		msgError "Could not retrieve CRL information.";
+		return undef;
+	};
+
+	msgDebug "CRL file is in ", $self->crlFormat, " format.";
+
+	return $self;
+}
+
+sub retrieve {
+	my ( $class, $crlFileHandle ) = @_;
+
+	bless my $self = {}, $class;
+
+	msgDebug "Analyzing remote CRL file";
+
+	my $t = EJBCA::CrlPublish::CrlInfo::Parse->new( $crlFileHandle );
+
+	unless ( $t ) {
+		msgError "Failed to parse CRL.";
+		return undef;
+	}
+
+	unless ( $t->apply( $self ) ) {
+		msgError "Failed to apply parsed CRL values.";
+		return undef;
+	}
 
 	return $self;
 }
@@ -86,7 +123,7 @@ sub importIssuerDn {
 	$s = sprintf $f, 'PEM', $crlFile;
 	return 1 if $self->tryImportIssuerDn( 'PEM', $s );
 
-	warn "Invalid CRL file '$crlFile'\n";
+	msgError "Invalid CRL file '$crlFile'\n";
 
 	return 0;
 }
@@ -116,54 +153,23 @@ sub importIssuingUrl {
 		. ' -noout -text'
 		. ' 2> /dev/null';
 
-	open my $fh, "$s |" or die $!;
-
-	my $keepgoing = 1;
-	while ( $keepgoing ) { 
-		my $txt = <$fh>;
-
-		unless ( defined $txt ) {
-			$keepgoing = 0;
-			next;
-		}
-
-		next unless $txt =~ "Issuing Distrubution Point:";
-
-		$keepgoing = 0;
+	my $fh;
+	unless ( open $fh, "$s |" ) {
+		msgError "open(openssl|): $!";
+		return undef;
 	}
 
-	my $txt1 = <$fh>;
-	return unless defined $txt1;
-	chomp $txt1;
-	$txt1 =~ s/^\s+//;
-	$txt1 =~ s/\s+$//;
-	unless ( $txt1 =~ /^Full Name:$/ ) {
-		warn "CRL parse error: expected 'Full Name', got '$txt1'\n";
-		return;
+	my $t = EJBCA::CrlPublish::CrlInfo::Parse->new( $fh );
+
+	unless ( $t ) {
+		msgError "Failed to parse CRL.";
+		return undef;
 	}
 
-	my $txt2 = <$fh>;
-	return unless defined $txt2;
-	chomp $txt2;
-	$txt2 =~ s/^\s+//;
-	$txt2 =~ s/\s+$//;
-	unless ( $txt2 =~ /^URI:/ ) {
-		warn "CRL parse error: expected 'URI', got '$txt2'\n";
-		return;
+	unless ( $t->apply( $self ) ) {
+		msgError "Failed to apply parsed CRL values.";
+		return undef;
 	}
-
-	my ( $dum0, $prot, $unc ) = split /:/, $txt2, 3;
-
-	my ( $dum1, $dum2, $host, $path ) = split /\//, $unc, 4;
-
-	my @part = split /\//, $path;
-	my $file = pop @part;
-	   $path = join( '/', @part );
-
-	$self->issuingFile( $file );
-	$self->issuingPath( $path );
-	$self->issuingHost( $host );
-	$self->issuingUrl( $prot . ';' . $unc );
 
 	return 1;
 }
@@ -203,6 +209,22 @@ sub crlFormat {
 	}
 
 	return $self->{crlFormat};
+}
+
+=head2 $self->crlNumber
+
+Returns the integer crlNumber from the CRL.
+
+=cut
+
+sub crlNumber {
+	my ( $self, $crlNumber ) = @_;
+
+	if ( defined $crlNumber ) {
+		$self->{crlNumber} = $crlNumber;
+	}
+
+	return $self->{crlNumber};
 }
 
 =head2 $self->issuerDn

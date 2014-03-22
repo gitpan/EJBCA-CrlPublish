@@ -45,7 +45,9 @@ cannot be retrieved from the server.
 
 use base 'EJBCA::CrlPublish::Method';
 
-our $VERSION = '0.5';
+use EJBCA::CrlPublish::Logging;
+
+our $VERSION = '0.60';
 
 
 ###############################################################################
@@ -56,13 +58,6 @@ sub validate {
 
 	$self->argMustExist( qw( crlFile remoteHost remotePath remoteFile ) );
 
-}
-
-sub publish {
-	my $self = shift;
-
-	my @args = ();
-
 	my $host = $self->target->remoteHost;
 	my $path = $self->target->remotePath;
 	my $file = $self->target->remoteFile;
@@ -71,8 +66,11 @@ sub publish {
 	my $pkey = $self->target->privateKeyFile;
 	my $args = $self->target->scpExtraArgs;
 
+	my @args = qw( -o BatchMode=yes );
+
 	if ( $pkey ) {
-		$self->checkFileType( 'SSH private key', $pkey );
+		$self->checkFileType( 'SSH private key', $pkey )
+			or return undef;
 		push @args, '-i', $pkey;
 	}
 
@@ -80,22 +78,120 @@ sub publish {
 		push @args, split /\s+/, $args;
 	}
 
-	my $source  = $self->target->crlFile;
-
-	$self->checkFileType( 'CRL file', $source );
-
 	my $t_host  = $user ? $user . '@' : '';
 	   $t_host .= $host;
 	my $t_file  = $path . '/' . $file;
 	my $t_temp  = $t_file . '.new';
 
+	$self->target->targetArgs( \@args );
+	$self->target->targetHost( $t_host );
+	$self->target->targetFile( $t_file );
+	$self->target->targetTemp( $t_temp );
+
+	return 1;
+}
+
+sub publish {
+	my $self = shift;
+
+	unless ( $self->publish_pre ) {
+		msgError "Failed pre-publish sanity check.";
+		return 0;
+	}
+
+	if ( my $t = $self->target->targetCrlNumber ) {
+		my $u = $self->target->crlInfo->crlNumber;
+		unless ( $u > $t ) {
+			msgDebug "Target already has the newest CRL, skipping.";
+			return 1;
+		}
+		return 1 unless $u > $t;
+	}
+
+	unless ( $self->publish_scp ) {
+		msgError "Failed to securely copy CRL file.";
+		return 0;
+	}
+
+	unless ( $self->publish_smv ) {
+		msgError "Failed to activate new CRL file.";
+		return 0;
+	}
+
+	return 1;
+}
+
+sub publish_pre {
+	my $self = shift;
+
+	my $args   = $self->target->targetArgs;
+	my $t_host = $self->target->targetHost;
+	my $t_file = $self->target->targetFile;
+	my $t_temp = $self->target->targetTemp;
+
+	my @trucall = ( 'ssh', @$args, $t_host, '/bin/true' );
+
+	unless ( system( @trucall ) == 0 ) {
+		msgError "Failed to ssh $t_host /bin/true: $?";
+		return 0;
+	}
+
+	my @sslcall = ( 'ssh', @$args, $t_host,
+			'openssl', 'crl',
+			'-in', $t_file,
+			'-inform', $self->target->crlInfo->crlFormat,
+			'-noout', '-text' );
+
+	open my $fh, '-|', @sslcall
+		or return 1;
+
+	my $t = EJBCA::CrlPublish::CrlInfo->retrieve( $fh )
+		or return 1;
+
+	return 1 unless $t->crlNumber;
+
+	$self->target->targetCrlNumber( $t->crlNumber );
+
+	return 1;
+}
+
+sub publish_scp {
+	my $self = shift;
+
+	my $args   = $self->target->targetArgs;
+	my $t_host = $self->target->targetHost;
+	my $t_temp = $self->target->targetTemp;
+
+	my $source = $self->target->crlFile;
 	my $target = $t_host . ':' . $t_temp;
 
-	system( 'scp', @args, $source, $target ) == 0
-		or die "Failed to scp: $?";
+	$self->checkFileType( 'CRL file', $source )
+		or return 0;
 
-	system( 'ssh', @args, $t_host, 'mv', $t_temp, $t_file ) == 0
-		or die "Failed to rename: $?";	
+	my @scpcall = ( 'scp', @$args, $source, $target );
+
+	unless ( system( @scpcall ) == 0 ) {
+		msgError "Failed to scp $source $target: $?";
+		return 0;
+	}
+
+	return 1;
+}
+
+sub publish_smv {
+	my $self = shift;
+
+	my $args   = $self->target->targetArgs;
+	my $t_host = $self->target->targetHost;
+	my $t_temp = $self->target->targetTemp;
+	my $t_file = $self->target->targetFile;
+
+	my @smvcall = ( 'ssh', @$args, $t_host, 'mv', $t_temp, $t_file );
+
+	unless ( system( @smvcall ) == 0 ) {
+		msgError "Failed to ssh $t_host mv $t_temp $t_file: $?";
+		return 0;
+	}
 
 	return 1;
 }
